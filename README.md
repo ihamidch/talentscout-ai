@@ -33,5 +33,5 @@
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/your-username/talentscout-ai.git](https://github.com/your-username/talentscout-ai.git)
+   git clone [https://github.com/your-username/talentscout-ai.git](https://github.com/ihamidch/talentscout-ai.git)
    cd talentscout-ai
