@@ -50,6 +50,10 @@ async function ensureDb(req, res, next) {
   if (req.method === 'GET' && pathOnly === '/api/health') {
     return next();
   }
+  // Docs-only GET; no DB needed (POST /api/applications/apply does the real work)
+  if (req.method === 'GET' && pathOnly === '/api/applications/apply') {
+    return next();
+  }
   try {
     await connectDB();
     next();
@@ -100,8 +104,17 @@ app.get('/api/applications/test-seed', async (req, res) => {
 });
 
 /**
- * --- 2. POST: APPLY & ANALYZE (Syncs with Python AI) ---
+ * --- 2. APPLY & ANALYZE (Syncs with Python AI) ---
+ * GET is only for humans/docs — the real endpoint is POST (multipart + JWT).
  */
+app.get('/api/applications/apply', (req, res) => {
+  res.status(405).json({
+    message: 'Method Not Allowed',
+    hint:
+      'Use POST with Authorization: Bearer <token>, multipart/form-data, field "resume" (file), plus jobDescription and jobId. Open the TalentScout web app to apply — do not visit this URL in the browser.',
+  });
+});
+
 app.post('/api/applications/apply', auth, upload.single('resume'), async (req, res) => {
   try {
     const { jobDescription, jobId } = req.body;
