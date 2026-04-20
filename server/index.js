@@ -185,10 +185,19 @@ app.post('/api/applications/apply', auth, uploadResume, async (req, res) => {
     const aiEngineBase =
       (process.env.AI_ENGINE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
+    // Vercel Hobby functions often cap at ~10s total — keep AI call under that (plus DB time).
+    const aiTimeoutRaw = Number(process.env.AI_REQUEST_TIMEOUT_MS);
+    const aiTimeoutMs =
+      Number.isFinite(aiTimeoutRaw) && aiTimeoutRaw > 0
+        ? aiTimeoutRaw
+        : process.env.VERCEL
+          ? 8000
+          : 15000;
+
     try {
       const aiResponse = await axios.post(`${aiEngineBase}/analyze-resume`, pythonFormData, {
         headers: { ...pythonFormData.getHeaders() },
-        timeout: 15000 
+        timeout: aiTimeoutMs,
       });
       const body = aiResponse.data;
       if (body && typeof body === "object" && !Array.isArray(body)) {
