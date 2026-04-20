@@ -24,7 +24,38 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MongoDB: lazy connect via connectDB() (serverless-safe). No fire-and-forget connect here.
 
-const upload = multer({ storage: multer.memoryStorage() });
+// Vercel request bodies are capped (~4.5 MB); reject early with a clear message.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 4 * 1024 * 1024 },
+});
+
+function uploadResume(req, res, next) {
+  upload.single("resume")(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ message: "Resume file is too large (max 4 MB)." });
+    }
+    return res.status(400).json({ message: err.message || "Upload failed" });
+  });
+}
+
+function normalizeSkillList(value) {
+  if (value == null) return [];
+  const arr = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+  return arr.map((x) => (x == null ? "" : String(x))).filter((s) => s.length > 0);
+}
+
+function normalizeScore(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
+}
+
+function normalizeSummary(s) {
+  const t = s == null ? "" : String(s);
+  return t.slice(0, 8000);
+}
 
 // --- Email Transporter Setup ---
 const transporter = nodemailer.createTransport({
@@ -115,10 +146,16 @@ app.get('/api/applications/apply', (req, res) => {
   });
 });
 
-app.post('/api/applications/apply', auth, upload.single('resume'), async (req, res) => {
+app.post('/api/applications/apply', auth, uploadResume, async (req, res) => {
   try {
     const { jobDescription, jobId } = req.body;
     if (!req.file) return res.status(400).json({ message: "No resume uploaded" });
+
+    const rawUserId = req.user && req.user.id;
+    if (!rawUserId || !mongoose.Types.ObjectId.isValid(String(rawUserId))) {
+      return res.status(401).json({ message: "Invalid user id in token" });
+    }
+    const candidateId = new mongoose.Types.ObjectId(String(rawUserId));
 
     const jobObjectId =
       jobId && mongoose.Types.ObjectId.isValid(jobId)
@@ -139,42 +176,74 @@ app.post('/api/applications/apply', auth, upload.single('resume'), async (req, r
         headers: { ...pythonFormData.getHeaders() },
         timeout: 15000 
       });
-      aiData = aiResponse.data.matchScore || aiResponse.data;
+      const body = aiResponse.data;
+      if (body && typeof body === "object" && !Array.isArray(body)) {
+        const payload = body.matchScore != null ? body.matchScore : body;
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+          aiData = { ...aiData, ...payload };
+        }
+      }
     } catch (aiErr) {
       console.error("⚠️ AI Bridge Failed - Using fallback metrics");
     }
 
-    const matched = aiData.matched_skills || aiData.skillsMatch || [];
-    const missing = aiData.missing_skills || [];
+    const matched = normalizeSkillList(aiData.matched_skills || aiData.skillsMatch);
+    const missing = normalizeSkillList(aiData.missing_skills);
     const aiAnalysisPayload = {
-      score: aiData.score || 0,
-      summary: aiData.summary || "Manual review required.",
+      score: normalizeScore(aiData.score),
+      summary: normalizeSummary(aiData.summary || "Manual review required."),
       matched_skills: matched,
       missing_skills: missing,
       skillsMatch: matched,
-      experienceLevel: aiData.experienceLevel || "Detecting...",
+      experienceLevel: normalizeSummary(
+        aiData.experienceLevel != null && aiData.experienceLevel !== ""
+          ? aiData.experienceLevel
+          : "Detecting...",
+      ).slice(0, 200),
     };
 
-    // Unique index on (job, candidate): upsert so the same user can re-run neural match without E11000.
-    const application = await Application.findOneAndUpdate(
-      { job: jobObjectId, candidate: req.user.id },
-      {
-        $set: {
-          job: jobObjectId,
-          resumeUrl: `uploads/${req.file.originalname}`,
-          aiAnalysis: aiAnalysisPayload,
-          status: "pending",
-        },
-      },
-      { new: true, upsert: true, runValidators: true },
-    );
+    const setPayload = {
+      job: jobObjectId,
+      resumeUrl: `uploads/${req.file.originalname}`,
+      aiAnalysis: aiAnalysisPayload,
+      status: "pending",
+    };
+
+    // Unique index on (job, candidate): upsert; retry once on rare E11000 race.
+    let application;
+    try {
+      application = await Application.findOneAndUpdate(
+        { job: jobObjectId, candidate: candidateId },
+        { $set: setPayload },
+        { new: true, upsert: true, runValidators: true },
+      );
+    } catch (e) {
+      if (e.code === 11000) {
+        application = await Application.findOneAndUpdate(
+          { job: jobObjectId, candidate: candidateId },
+          { $set: setPayload },
+          { new: true },
+        );
+      } else {
+        throw e;
+      }
+    }
+
+    if (!application) {
+      return res.status(500).json({ message: "Could not save application" });
+    }
 
     res.json({ success: true, aiAnalysis: application.aiAnalysis });
   } catch (err) {
     console.error("POST /api/applications/apply:", err);
+    const hint =
+      err.name === "ValidationError" || err.name === "CastError"
+        ? "Invalid data from AI or upload; try again."
+        : undefined;
     res.status(500).json({
       message: "Internal Server Error",
-      ...(process.env.VERCEL ? {} : { detail: err.message }),
+      ...(hint && { hint }),
+      ...(process.env.VERCEL ? { reason: err.name } : { detail: err.message }),
     });
   }
 });

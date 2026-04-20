@@ -34,7 +34,13 @@ const ApplyJob = ({ selectedJobId }) => {
       // ✅ Now mapping the full aiAnalysis object including matched/missing skills
       setResult(res.data.aiAnalysis);
     } catch (err) {
-      alert("Error: " + (err.response?.data?.message || "AI Engine Offline"));
+      const d = err.response?.data;
+      const extra = [d?.hint, d?.detail, d?.reason].filter(Boolean).join(" — ");
+      alert(
+        "Error: " +
+          (d?.message || err.message || "AI Engine Offline") +
+          (extra ? `\n${extra}` : ""),
+      );
     } finally {
       setLoading(false);
     }
