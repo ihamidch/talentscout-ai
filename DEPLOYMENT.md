@@ -10,8 +10,8 @@ Two Vercel projects (same pattern as your other MERN apps): **API** (`server/`) 
 
 | Variable | Notes |
 |----------|--------|
-| `MONGO_URI` | MongoDB Atlas connection string |
-| `JWT_SECRET` | Strong random string for JWT |
+| `MONGO_URI` | MongoDB Atlas connection string (**required** — without it, register/login return 503) |
+| `JWT_SECRET` | Strong random string for JWT (**required** for login — set a long random value) |
 | `EMAIL_USER` / `EMAIL_PASS` | Gmail app password for mailer (optional in dev) |
 | `AI_ENGINE_URL` | URL of your FastAPI service if deployed (e.g. Railway/Render). Omit to use fallback scoring when the AI bridge fails. |
 

@@ -46,7 +46,12 @@ exports.register = async (req, res) => {
 
   } catch (err) {
     console.error("❌ DATABASE ERROR:", err.message);
-    res.status(500).json({ message: "Server Error", error: err.message });
+    const isConfig =
+      err.message?.includes("MONGO_URI") || err.name === "MongoServerSelectionError";
+    res.status(isConfig ? 503 : 500).json({
+      message: isConfig ? "Database unavailable" : "Server Error",
+      error: process.env.NODE_ENV === "production" ? undefined : err.message,
+    });
   }
 };
 
@@ -77,11 +82,18 @@ exports.login = async (req, res) => {
     }
 
     // 3. Generate JWT Token
-    // We include ID and ROLE so the frontend can restrict access
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is missing — set it in Vercel Environment Variables.");
+      return res.status(503).json({
+        message:
+          "Server misconfiguration: JWT_SECRET is not set. Add it in Vercel → Environment Variables.",
+      });
+    }
+
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '24h' },
     );
 
     console.log("3. ✅ Login Successful for:", user.name);
@@ -97,6 +109,12 @@ exports.login = async (req, res) => {
 
   } catch (err) {
     console.error("❌ Login Error:", err.message);
+    if (err.message?.includes("secret")) {
+      return res.status(503).json({
+        message:
+          "Server misconfiguration: check JWT_SECRET in Vercel Environment Variables.",
+      });
+    }
     res.status(500).json({ message: "Server Error" });
   }
 };

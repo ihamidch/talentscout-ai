@@ -12,6 +12,7 @@ const Application = require('./models/Application');
 const User = require('./models/User');
 const auth = require('./middleware/auth'); 
 const authRoutes = require('./routes/auth');
+const connectDB = require('./db');
 
 const app = express();
 
@@ -21,10 +22,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// --- Database Connection ---
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("🚀 Neural Sync: MongoDB Connected"))
-  .catch(err => console.log("❌ DB Error:", err));
+// MongoDB: lazy connect via connectDB() (serverless-safe). No fire-and-forget connect here.
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -38,7 +36,38 @@ const transporter = nodemailer.createTransport({
 });
 
 // --- Routes ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/api/health', (req, res) =>
+  res.json({
+    status: 'ok',
+    mongoConfigured: !!process.env.MONGO_URI,
+    jwtConfigured: !!process.env.JWT_SECRET,
+  }),
+);
+
+/** Ensure DB before any /api route except GET /api/health */
+async function ensureDb(req, res, next) {
+  const pathOnly = req.originalUrl.split('?')[0];
+  if (req.method === 'GET' && pathOnly === '/api/health') {
+    return next();
+  }
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('ensureDb:', err.message);
+    const hint =
+      err.code === 'NO_MONGO_URI'
+        ? 'Add MONGO_URI in Vercel → Environment Variables for this project.'
+        : 'Check MONGO_URI (Atlas IP allowlist includes 0.0.0.0/0 for Vercel).';
+    res.status(503).json({
+      message: 'Database unavailable',
+      hint,
+      detail: process.env.VERCEL ? undefined : err.message,
+    });
+  }
+}
+
+app.use(ensureDb);
 
 app.use('/api/auth', authRoutes);
 
