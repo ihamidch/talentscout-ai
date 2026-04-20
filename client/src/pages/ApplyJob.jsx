@@ -35,7 +35,9 @@ const ApplyJob = ({ selectedJobId }) => {
       setResult(res.data.aiAnalysis);
     } catch (err) {
       const d = err.response?.data;
-      const extra = [d?.hint, d?.detail, d?.reason].filter(Boolean).join(" — ");
+      const extra = [d?.hint, d?.detail, d?.reason, d?.code != null ? `code:${d.code}` : null]
+        .filter(Boolean)
+        .join(" — ");
       alert(
         "Error: " +
           (d?.message || err.message || "AI Engine Offline") +

@@ -57,6 +57,21 @@ function normalizeSummary(s) {
   return t.slice(0, 8000);
 }
 
+/** JWT payload shape can vary; always resolve to a real ObjectId string. */
+function resolveCandidateObjectId(user) {
+  if (!user) return null;
+  const raw = user.id ?? user.userId ?? user._id ?? user.sub;
+  if (raw == null) return null;
+  let str;
+  if (typeof raw === "object" && raw !== null && typeof raw.toString === "function") {
+    str = raw.toString();
+  } else {
+    str = String(raw);
+  }
+  if (!mongoose.Types.ObjectId.isValid(str)) return null;
+  return new mongoose.Types.ObjectId(str);
+}
+
 // --- Email Transporter Setup ---
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -151,11 +166,10 @@ app.post('/api/applications/apply', auth, uploadResume, async (req, res) => {
     const { jobDescription, jobId } = req.body;
     if (!req.file) return res.status(400).json({ message: "No resume uploaded" });
 
-    const rawUserId = req.user && req.user.id;
-    if (!rawUserId || !mongoose.Types.ObjectId.isValid(String(rawUserId))) {
+    const candidateId = resolveCandidateObjectId(req.user);
+    if (!candidateId) {
       return res.status(401).json({ message: "Invalid user id in token" });
     }
-    const candidateId = new mongoose.Types.ObjectId(String(rawUserId));
 
     const jobObjectId =
       jobId && mongoose.Types.ObjectId.isValid(jobId)
@@ -202,48 +216,61 @@ app.post('/api/applications/apply', auth, uploadResume, async (req, res) => {
       ).slice(0, 200),
     };
 
-    const setPayload = {
-      job: jobObjectId,
-      resumeUrl: `uploads/${req.file.originalname}`,
-      aiAnalysis: aiAnalysisPayload,
-      status: "pending",
-    };
+    const resumePath = `uploads/${req.file.originalname}`;
+    const query = { job: jobObjectId, candidate: candidateId };
 
-    // Unique index on (job, candidate): upsert; retry once on rare E11000 race.
-    let application;
-    try {
-      application = await Application.findOneAndUpdate(
-        { job: jobObjectId, candidate: candidateId },
-        { $set: setPayload },
-        { new: true, upsert: true, runValidators: true },
-      );
-    } catch (e) {
-      if (e.code === 11000) {
-        application = await Application.findOneAndUpdate(
-          { job: jobObjectId, candidate: candidateId },
-          { $set: setPayload },
-          { new: true },
-        );
-      } else {
-        throw e;
+    // findOne + save is more reliable than findOneAndUpdate upsert on serverless Mongoose.
+    let application = await Application.findOne(query);
+    if (application) {
+      application.set({
+        resumeUrl: resumePath,
+        aiAnalysis: aiAnalysisPayload,
+        status: "pending",
+      });
+      await application.save();
+    } else {
+      application = new Application({
+        job: jobObjectId,
+        candidate: candidateId,
+        resumeUrl: resumePath,
+        aiAnalysis: aiAnalysisPayload,
+        status: "pending",
+      });
+      try {
+        await application.save();
+      } catch (e) {
+        if (e.code === 11000) {
+          application = await Application.findOne(query);
+          if (!application) throw e;
+          application.set({
+            resumeUrl: resumePath,
+            aiAnalysis: aiAnalysisPayload,
+            status: "pending",
+          });
+          await application.save();
+        } else {
+          throw e;
+        }
       }
-    }
-
-    if (!application) {
-      return res.status(500).json({ message: "Could not save application" });
     }
 
     res.json({ success: true, aiAnalysis: application.aiAnalysis });
   } catch (err) {
     console.error("POST /api/applications/apply:", err);
-    const hint =
-      err.name === "ValidationError" || err.name === "CastError"
-        ? "Invalid data from AI or upload; try again."
-        : undefined;
+    let hint;
+    if (err.name === "ValidationError" || err.name === "CastError") {
+      hint = "Invalid data from AI or upload; try again.";
+    } else if (err.name === "MongoServerError" && err.code === 11000) {
+      hint = "Already applied — updating your record failed. Try again.";
+    }
+    const expose =
+      process.env.EXPOSE_APPLY_ERRORS === "1" ||
+      (!process.env.VERCEL && process.env.NODE_ENV !== "production");
     res.status(500).json({
       message: "Internal Server Error",
       ...(hint && { hint }),
-      ...(process.env.VERCEL ? { reason: err.name } : { detail: err.message }),
+      ...(err.code != null && { code: err.code }),
+      ...(expose ? { detail: err.message } : { reason: err.name }),
     });
   }
 });
