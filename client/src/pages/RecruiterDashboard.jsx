@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { apiUrl } from '../api.js';
 import toast, { Toaster } from 'react-hot-toast';
 import { 
   Search, Loader2, Trash2, X, AlertCircle, UserPlus, 
@@ -21,7 +22,7 @@ const RecruiterDashboard = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get('http://localhost:5000/api/applications/all', {
+      const res = await axios.get(apiUrl('/api/applications/all'), {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCandidates(res.data);
@@ -39,7 +40,7 @@ const RecruiterDashboard = () => {
     const loadingToast = toast.loading('Syncing Neural Data...');
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:5000/api/applications/${id}/status`, 
+      await axios.patch(apiUrl(`/api/applications/${id}/status`), 
         { status: newStatus },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -54,7 +55,7 @@ const RecruiterDashboard = () => {
     const loadingToast = toast.loading('Purging Identity...');
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:5000/api/applications/${deleteConfirm.id}`, {
+      await axios.delete(apiUrl(`/api/applications/${deleteConfirm.id}`), {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCandidates(prev => prev.filter(app => app._id !== deleteConfirm.id));

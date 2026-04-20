@@ -2,6 +2,14 @@
 
 **TalentScout AI** is a next-generation, Full-Stack AI platform designed to automate candidate screening using **Llama 3.3** and **RAG (Retrieval-Augmented Generation)**. It features a high-performance "Neural Scanner" for candidates and an Intelligence Dashboard for recruiters.
 
+## Live demo (Vercel)
+
+- **App (frontend):** [https://talentscout-ai-web.vercel.app](https://talentscout-ai-web.vercel.app)
+- **API (backend):** [https://talentscout-ai-api.vercel.app](https://talentscout-ai-api.vercel.app) — health: [`/api/health`](https://talentscout-ai-api.vercel.app/api/health)
+- **Repository:** [https://github.com/ihamidch/talentscout-ai](https://github.com/ihamidch/talentscout-ai)
+
+Configure `MONGO_URI`, `JWT_SECRET`, and optional `AI_ENGINE_URL` / email vars on the API project in Vercel. See [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 ---
 
 ## 🚀 Key Features

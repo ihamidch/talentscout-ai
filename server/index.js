@@ -16,7 +16,8 @@ const authRoutes = require('./routes/auth');
 const app = express();
 
 // --- Middleware ---
-app.use(cors({ origin: 'http://localhost:5173' })); 
+// Reflects browser origin so the Vite app (any *.vercel.app or CLIENT_URL) can call this API.
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -37,6 +38,8 @@ const transporter = nodemailer.createTransport({
 });
 
 // --- Routes ---
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
 app.use('/api/auth', authRoutes);
 
 /**
@@ -81,8 +84,11 @@ app.post('/api/applications/apply', auth, upload.single('resume'), async (req, r
 
     let aiData = { score: 0, summary: "AI Offline", matched_skills: [], missing_skills: [] };
 
+    const aiEngineBase =
+      (process.env.AI_ENGINE_URL || 'http://localhost:8000').replace(/\/$/, '');
+
     try {
-      const aiResponse = await axios.post('http://localhost:8000/analyze-resume', pythonFormData, {
+      const aiResponse = await axios.post(`${aiEngineBase}/analyze-resume`, pythonFormData, {
         headers: { ...pythonFormData.getHeaders() },
         timeout: 15000 
       });
@@ -179,4 +185,8 @@ app.delete('/api/applications/:id', auth, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Pipeline active on Port ${PORT}`));
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => console.log(`✅ Pipeline active on Port ${PORT}`));
+}
+
+module.exports = app;

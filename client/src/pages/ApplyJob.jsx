@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { apiUrl } from '../api.js';
 import { 
   Upload, FileText, Target, AlertCircle, Sparkles, 
   CheckCircle2, ChevronRight, BrainCircuit, Loader2, Zap,
@@ -24,7 +25,7 @@ const ApplyJob = ({ selectedJobId }) => {
 
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/applications/apply', formData, {
+      const res = await axios.post(apiUrl('/api/applications/apply'), formData, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'

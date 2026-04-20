@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { apiUrl } from '../api.js';
 import { useNavigate, Link } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, Sparkles } from 'lucide-react';
@@ -19,7 +20,7 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    const loginPromise = axios.post('http://localhost:5000/api/auth/login', formData);
+    const loginPromise = axios.post(apiUrl('/api/auth/login'), formData);
 
     toast.promise(loginPromise, {
       loading: 'Syncing with Neural Engine...',

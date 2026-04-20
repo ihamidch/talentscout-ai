@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { apiUrl } from '../api.js';
 import { useNavigate, Link } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { User, Briefcase, Mail, Lock, UserPlus, ArrowRight, Loader2, Sparkles } from 'lucide-react';
@@ -18,7 +19,7 @@ const Register = () => {
     e.preventDefault();
     setLoading(true);
 
-    const registerPromise = axios.post('http://localhost:5000/api/auth/register', formData);
+    const registerPromise = axios.post(apiUrl('/api/auth/register'), formData);
 
     toast.promise(registerPromise, {
       loading: 'Initializing Neural Profile...',
