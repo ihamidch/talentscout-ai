@@ -26,7 +26,7 @@ const RecruiterDashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCandidates(res.data);
-    } catch (err) {
+    } catch {
       setIsEngineOnline(false);
       toast.error("Neural Engine Unreachable");
     } finally {
@@ -46,7 +46,7 @@ const RecruiterDashboard = () => {
       );
       setCandidates(prev => prev.map(app => app._id === id ? { ...app, status: newStatus } : app));
       toast.success(`Node marked as ${newStatus}`, { id: loadingToast });
-    } catch (err) {
+    } catch {
       toast.error("Sync Failed", { id: loadingToast });
     }
   };
@@ -61,7 +61,7 @@ const RecruiterDashboard = () => {
       setCandidates(prev => prev.filter(app => app._id !== deleteConfirm.id));
       toast.success("Identity Purged", { id: loadingToast });
       setDeleteConfirm(null);
-    } catch (err) {
+    } catch {
       toast.error("Purge Failed", { id: loadingToast });
     }
   };

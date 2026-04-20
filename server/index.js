@@ -120,6 +120,11 @@ app.post('/api/applications/apply', auth, upload.single('resume'), async (req, r
     const { jobDescription, jobId } = req.body;
     if (!req.file) return res.status(400).json({ message: "No resume uploaded" });
 
+    const jobObjectId =
+      jobId && mongoose.Types.ObjectId.isValid(jobId)
+        ? new mongoose.Types.ObjectId(jobId)
+        : new mongoose.Types.ObjectId();
+
     const pythonFormData = new FormData();
     pythonFormData.append('resume', req.file.buffer, { filename: req.file.originalname });
     pythonFormData.append('jobDescription', jobDescription || "General Application");
@@ -139,23 +144,38 @@ app.post('/api/applications/apply', auth, upload.single('resume'), async (req, r
       console.error("⚠️ AI Bridge Failed - Using fallback metrics");
     }
 
-    const newApplication = new Application({
-      candidate: req.user.id, 
-      job: jobId || new mongoose.Types.ObjectId(), 
-      resumeUrl: `uploads/${req.file.originalname}`,
-      aiAnalysis: {
-        score: aiData.score || 0,
-        summary: aiData.summary || "Manual review required.",
-        matched_skills: aiData.matched_skills || [], 
-        missing_skills: aiData.missing_skills || []  
-      },
-      status: 'pending' 
-    });
+    const matched = aiData.matched_skills || aiData.skillsMatch || [];
+    const missing = aiData.missing_skills || [];
+    const aiAnalysisPayload = {
+      score: aiData.score || 0,
+      summary: aiData.summary || "Manual review required.",
+      matched_skills: matched,
+      missing_skills: missing,
+      skillsMatch: matched,
+      experienceLevel: aiData.experienceLevel || "Detecting...",
+    };
 
-    await newApplication.save();
-    res.json({ success: true, aiAnalysis: newApplication.aiAnalysis });
+    // Unique index on (job, candidate): upsert so the same user can re-run neural match without E11000.
+    const application = await Application.findOneAndUpdate(
+      { job: jobObjectId, candidate: req.user.id },
+      {
+        $set: {
+          job: jobObjectId,
+          resumeUrl: `uploads/${req.file.originalname}`,
+          aiAnalysis: aiAnalysisPayload,
+          status: "pending",
+        },
+      },
+      { new: true, upsert: true, runValidators: true },
+    );
+
+    res.json({ success: true, aiAnalysis: application.aiAnalysis });
   } catch (err) {
-    res.status(500).json({ message: "Internal Server Error" });
+    console.error("POST /api/applications/apply:", err);
+    res.status(500).json({
+      message: "Internal Server Error",
+      ...(process.env.VERCEL ? {} : { detail: err.message }),
+    });
   }
 });
 

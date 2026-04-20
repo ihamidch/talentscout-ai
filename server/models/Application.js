@@ -19,6 +19,8 @@ const applicationSchema = new mongoose.Schema({
     score: { type: Number, default: 0 },
     summary: { type: String, default: "Analysis in progress..." },
     skillsMatch: { type: [String], default: [] },
+    matched_skills: { type: [String], default: [] },
+    missing_skills: { type: [String], default: [] },
     experienceLevel: { type: String, default: "Detecting..." }
   },
   createdAt: { type: Date, default: Date.now }
