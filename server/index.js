@@ -318,13 +318,15 @@ app.patch('/api/applications/:id/status', auth, async (req, res) => {
 
     if (!updatedApp) return res.status(404).json({ message: "Application not found" });
 
-    // 📧 Automated Outreach Logic
-    if (status === 'shortlisted' || status === 'rejected') {
+    // 📧 Automated Outreach Logic (notify candidate on key status changes)
+    const candidateNotificationStatuses = new Set(['pending', 'shortlisted', 'rejected']);
+    if (candidateNotificationStatuses.has(status)) {
+      const statusLabel = String(status).toUpperCase();
       const mailOptions = {
         from: process.env.EMAIL_USER,
         to: updatedApp.candidate.email,
-        subject: `Update: Your Application Status is ${status.toUpperCase()}`,
-        text: `Hi ${updatedApp.candidate.name},\n\nYour application status for Talent Scout Pro has been updated to: ${status}.\n\nBest regards,\nThe Recruitment Team`
+        subject: `Update: Your Application Status is ${statusLabel}`,
+        text: `Hi ${updatedApp.candidate.name},\n\nYour application status for Talent Scout Pro has been updated to: ${status}.\n\nBest regards,\nThe Recruitment Team`,
       };
 
       transporter.sendMail(mailOptions, (err, info) => {
