@@ -18,6 +18,13 @@ const ApplyJob = ({ selectedJobId }) => {
     if (!file || !jobDescription) return alert("Please provide both Resume and Job Description");
 
     const token = localStorage.getItem('token');
+    if (!token || token === 'null' || token === 'undefined') {
+      alert('Session expired. Please login again.');
+      localStorage.clear();
+      window.location.href = '/login';
+      return;
+    }
+
     const formData = new FormData();
     formData.append('resume', file);
     formData.append('jobDescription', jobDescription);

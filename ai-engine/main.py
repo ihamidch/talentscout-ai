@@ -1,9 +1,10 @@
 import os
-import uvicorn
-import fitz  # PyMuPDF
+from io import BytesIO
 # 
 import json
 import re
+from collections import Counter
+from pypdf import PdfReader
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -30,24 +31,68 @@ app.add_middleware(
 def extract_text_from_pdf(pdf_bytes):
     text = ""
     try:
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            for page in doc:
-                text += page.get_text()
+        reader = PdfReader(BytesIO(pdf_bytes))
+        for page in reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content
         return text
     except Exception as e:
         print(f"❌ PDF Error: {e}")
         return ""
 
+
+def _tokenize(text: str):
+    return re.findall(r"[A-Za-z][A-Za-z0-9\+\#\.-]{1,}", text.lower())
+
+
+def fallback_analysis(resume_text: str, job_description: str):
+    jd_tokens = _tokenize(job_description)
+    resume_tokens = set(_tokenize(resume_text))
+
+    if not jd_tokens:
+        return {
+            "score": 10,
+            "summary": "Job description is too short for accurate scoring.",
+            "matched_skills": [],
+            "missing_skills": [],
+        }
+
+    stop = {
+        "with", "from", "that", "this", "your", "have", "will", "you", "for", "the",
+        "and", "are", "our", "job", "role", "years", "year", "experience", "work",
+        "skills", "skill", "using", "ability", "strong",
+    }
+    freq = Counter([t for t in jd_tokens if len(t) > 2 and t not in stop])
+    ranked = [w for w, _ in freq.most_common(20)]
+
+    matched = [w for w in ranked if w in resume_tokens][:8]
+    missing = [w for w in ranked if w not in resume_tokens][:8]
+    denom = max(1, len(ranked))
+    score = int(round((len(matched) / denom) * 100))
+    score = max(5, min(95, score))
+
+    summary = (
+        f"Heuristic analysis complete: {len(matched)} key JD terms matched, "
+        f"{len(missing)} still missing."
+    )
+    return {
+        "score": score,
+        "summary": summary,
+        "matched_skills": matched,
+        "missing_skills": missing,
+    }
+
 @app.post("/analyze-resume")
 async def analyze_resume(resume: UploadFile = File(...), jobDescription: str = Form(...)):
-    if not client:
-        return {"matchScore": {"score": 0, "summary": "Groq API Key missing.", "matched_skills": [], "missing_skills": []}}
-
     pdf_content = await resume.read()
     resume_text = extract_text_from_pdf(pdf_content)
 
     if len(resume_text.strip()) < 50:
         return {"matchScore": {"score": 5, "summary": "Resume unreadable. Please upload a text-based PDF.", "matched_skills": [], "missing_skills": []}}
+
+    if not client:
+        return {"matchScore": fallback_analysis(resume_text, jobDescription)}
 
     # 2. Updated Prompt for Dual-Skill Extraction
     # 
@@ -104,6 +149,3 @@ async def analyze_resume(resume: UploadFile = File(...), jobDescription: str = F
                 "missing_skills": []
             }
         }
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
