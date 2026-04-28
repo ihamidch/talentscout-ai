@@ -12,7 +12,7 @@ const applicationSchema = new mongoose.Schema({
   resumeUrl: String,
   status: {
     type: String,
-    enum: ['pending', 'shortlisted', 'rejected'],
+    enum: ['pending', 'shortlisted', 'selected', 'rejected'],
     default: 'pending'
   },
   aiAnalysis: {

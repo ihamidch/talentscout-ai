@@ -73,13 +73,46 @@ function resolveCandidateObjectId(user) {
 }
 
 // --- Email Transporter Setup ---
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS // Your 16-character App Password
+const mailConfigured = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+const transporter = mailConfigured
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS, // Your 16-character App Password
+      },
+    })
+  : null;
+
+async function sendApplicationStatusEmail({ to, name, status }) {
+  if (!mailConfigured || !transporter) {
+    return { sent: false, reason: 'EMAIL_NOT_CONFIGURED' };
   }
-});
+  if (!to) {
+    return { sent: false, reason: 'CANDIDATE_EMAIL_MISSING' };
+  }
+
+  const normalized = String(status || '').toLowerCase();
+  const statusLabel = normalized.toUpperCase();
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to,
+    subject: `Update: Your Application Status is ${statusLabel}`,
+    text:
+      `Hi ${name || 'Candidate'},\n\n` +
+      `Your application status for Talent Scout Pro has been updated to: ${normalized}.\n\n` +
+      `Best regards,\nThe Recruitment Team`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 Success: Email dispatched to ${to} for status ${normalized}`);
+    return { sent: true };
+  } catch (err) {
+    console.error('📧 Mail Error:', err.message);
+    return { sent: false, reason: err.message };
+  }
+}
 
 // --- Routes ---
 app.get('/api/health', (req, res) =>
@@ -87,6 +120,7 @@ app.get('/api/health', (req, res) =>
     status: 'ok',
     mongoConfigured: !!process.env.MONGO_URI,
     jwtConfigured: !!process.env.JWT_SECRET,
+    emailConfigured: mailConfigured,
   }),
 );
 
@@ -309,33 +343,33 @@ app.get('/api/applications/all', auth, async (req, res) => {
 app.patch('/api/applications/:id/status', auth, async (req, res) => {
   try {
     const { status } = req.body;
+    const normalizedStatus = String(status || '').toLowerCase();
+    const candidateNotificationStatuses = new Set(['pending', 'shortlisted', 'selected', 'rejected']);
+    if (!candidateNotificationStatuses.has(normalizedStatus)) {
+      return res.status(400).json({
+        message: 'Invalid status value',
+        allowed: Array.from(candidateNotificationStatuses),
+      });
+    }
     
     const updatedApp = await Application.findByIdAndUpdate(
       req.params.id, 
-      { status }, 
+      { status: normalizedStatus }, 
       { returnDocument: 'after' } // ✅ FIXED: Deprecation warning resolved
     ).populate('candidate', 'name email');
 
     if (!updatedApp) return res.status(404).json({ message: "Application not found" });
 
-    // 📧 Automated Outreach Logic (notify candidate on key status changes)
-    const candidateNotificationStatuses = new Set(['pending', 'shortlisted', 'rejected']);
-    if (candidateNotificationStatuses.has(status)) {
-      const statusLabel = String(status).toUpperCase();
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: updatedApp.candidate.email,
-        subject: `Update: Your Application Status is ${statusLabel}`,
-        text: `Hi ${updatedApp.candidate.name},\n\nYour application status for Talent Scout Pro has been updated to: ${status}.\n\nBest regards,\nThe Recruitment Team`,
-      };
+    const mailResult = await sendApplicationStatusEmail({
+      to: updatedApp.candidate?.email,
+      name: updatedApp.candidate?.name,
+      status: normalizedStatus,
+    });
 
-      transporter.sendMail(mailOptions, (err, info) => {
-        if (err) console.log("📧 Mail Error:", err.message);
-        else console.log("📧 Success: Email dispatched to " + updatedApp.candidate.email);
-      });
-    }
-
-    res.json(updatedApp);
+    res.json({
+      ...updatedApp.toObject(),
+      emailNotification: mailResult,
+    });
   } catch (err) {
     res.status(500).json({ message: "Update failed" });
   }
